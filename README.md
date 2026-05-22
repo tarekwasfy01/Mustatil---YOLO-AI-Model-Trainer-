@@ -1,7 +1,10 @@
 
 The installer .exe does download Python and all dependencys then it starts the GUI. Don't worry, it takes some time and should be an option for non Python natives. Download from Github Releases or on itch.
+Downloads:
+https://tarekwasfy01.itch.io/mustatil-pro-yolo-sam2-ai-model-trainer-archeology
 
-<img width="1535" height="962" alt="Detections + Crops" src="https://github.com/user-attachments/assets/0b07301b-ac57-455b-a534-7b9501b4e770" />
+https://github.com/tarekwasfy01/Mustatil---YOLO-AI-Model-Trainer-/releases/download/Mustatil-Pro-Yolo-Sam2-Trainer-V2/Mustatil_Setup.exe
+
 
 Download v Zip and click on the dependencies .bat. Use Python 3.11.
 
@@ -12,4 +15,22 @@ Download the .exe installer release from github or here: https://tarekwasfy01.it
 <img width="1535" height="962" alt="Detections + Crops" src="https://github.com/user-attachments/assets/0b07301b-ac57-455b-a534-7b9501b4e770" />
 
 
-T
+[T](https://tarekwasfy01.itch.io/mustatil-pro-yolo-sam2-ai-model-trainer-archeology
+
+
+Downloads:
+https://tarekwasfy01.itch.io/mustatil-pro-yolo-sam2-ai-model-trainer-archeology
+
+https://github.com/tarekwasfy01/Mustatil---YOLO-AI-Model-Trainer-/releases/download/Mustatil-Pro-Yolo-Sam2-Trainer-V2/Mustatil_Setup.exe
+
+
+Downloads:
+https://tarekwasfy01.itch.io/mustatil-pro-yolo-sam2-ai-model-trainer-archeology
+
+https://github.com/tarekwasfy01/Mustatil---YOLO-AI-Model-Trainer-/releases/download/Mustatil-Pro-Yolo-Sam2-Trainer-V2/Mustatil_Setup.exe
+
+
+Downloads:
+https://tarekwasfy01.itch.io/mustatil-pro-yolo-sam2-ai-model-trainer-archeology
+
+https://github.com/tarekwasfy01/Mustatil---YOLO-AI-Model-Trainer-/releases/download/Mustatil-Pro-Yolo-Sam2-Trainer-V2/Mustatil_Setup.exe
