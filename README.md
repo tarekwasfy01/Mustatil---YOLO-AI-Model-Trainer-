@@ -57,3 +57,4 @@ https://github.com/tarekwasfy01/Mustatil---YOLO-AI-Model-Trainer-/releases/downl
 
 
 Aditionally there is a GeoPackage converter for QGis if there is a Problem with the files. Normally you can change the EPGS for a layer in QGis.
+The Program was written using AI.
