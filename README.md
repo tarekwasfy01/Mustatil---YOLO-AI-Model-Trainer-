@@ -11,7 +11,7 @@ https://github.com/tarekwasfy01/Mustatil---YOLO-AI-Model-Trainer-/releases/downl
 
 ## For Python natives:
 
-Download v Zip and click on the dependencies .bat. Use Python 3.11.
+Download Zip and click on the dependencies .bat. Use Python 3.11.
 
 # Download the Zip Python archive here:
 
