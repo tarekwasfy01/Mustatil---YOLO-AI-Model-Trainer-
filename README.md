@@ -8,7 +8,7 @@ The installer .exe does download Python and all dependencys then it starts the G
 <a href="https://github.com/tarekwasfy01/Mustatil---YOLO-AI-Model-Trainer-/releases/download/Mustatil-3.2/Mustatil_3.2_+Models_Setup.exe">GitHub</a>
 <a href="https://github.com/tarekwasfy01/Mustatil---YOLO-AI-Model-Trainer-/releases/download/Mustatil-3.2/Mustatil_3.2_+Models_Setup.exe">GitHub</a>
 
-<a href="https://github.com">[GitHub](https://github.com/tarekwasfy01/Mustatil---YOLO-AI-Model-Trainer-/releases/download/Mustatil-3.2/Mustatil_3.2_+Models_Setup.exe)</a>
+<a href="https://github.com/tarekwasfy01/Mustatil---YOLO-AI-Model-Trainer-/releases/download/Mustatil-3.2/Mustatil_3.2_+Models_Setup.exe">https://github.com/tarekwasfy01/Mustatil---YOLO-AI-Model-Trainer-/releases/download/Mustatil-3.2/Mustatil_3.2_+Models_Setup.exe</a>
 
 <a href="https://github.com/tarekwasfy01/Mustatil---YOLO-AI-Model-Trainer-/releases/download/Mustatil-3.2/Mustatil_3.2_+Models_Setup.exe">GitHub</a>
 <a href="https://github.com/tarekwasfy01/Mustatil---YOLO-AI-Model-Trainer-/releases/download/Mustatil-3.2/Mustatil_3.2_+Models_Setup.exe">GitHub</a>
