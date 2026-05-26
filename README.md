@@ -25,7 +25,7 @@ https://github.com/tarekwasfy01/Mustatil---YOLO-AI-Model-Trainer-/blob/Mustatil-
 
 # Download the .exe installer release from github: 
 
-https://github.com/tarekwasfy01/Mustatil---YOLO-AI-Model-Trainer-/releases/download/Mustatil-3.2/Mustatil_3.2_+Models_Setup.exe
+<a href="https://github.com/tarekwasfy01/Mustatil---YOLO-AI-Model-Trainer-/releases/download/Mustatil-3.2/Mustatil_3.2_+Models_Setup.exe">https://github.com/tarekwasfy01/Mustatil---YOLO-AI-Model-Trainer-/releases/download/Mustatil-3.2/Mustatil_3.2_+Models_Setup.exe</a>
 
 
 
@@ -38,10 +38,10 @@ https://github.com/tarekwasfy01/Mustatil---YOLO-AI-Model-Trainer-/releases/downl
 
 
 # Downloads:
-https://github.com/tarekwasfy01/Mustatil---YOLO-AI-Model-Trainer-/releases/download/Mustatil-3.2/Mustatil_3.2_+Models_Setup.exe
+<a href="https://github.com/tarekwasfy01/Mustatil---YOLO-AI-Model-Trainer-/releases/download/Mustatil-3.2/Mustatil_3.2_+Models_Setup.exe">https://github.com/tarekwasfy01/Mustatil---YOLO-AI-Model-Trainer-/releases/download/Mustatil-3.2/Mustatil_3.2_+Models_Setup.exe</a>
 
 # Downloads:
-https://github.com/tarekwasfy01/Mustatil---YOLO-AI-Model-Trainer-/releases/download/Mustatil-3.2/Mustatil_3.2_+Models_Setup.exe
+<a href="https://github.com/tarekwasfy01/Mustatil---YOLO-AI-Model-Trainer-/releases/download/Mustatil-3.2/Mustatil_3.2_+Models_Setup.exe">https://github.com/tarekwasfy01/Mustatil---YOLO-AI-Model-Trainer-/releases/download/Mustatil-3.2/Mustatil_3.2_+Models_Setup.exe</a>
 
 
 Aditionally there is a GeoPackage converter for QGis if there is a Problem with the files. Normally you can change the EPGS for a layer in QGis.
