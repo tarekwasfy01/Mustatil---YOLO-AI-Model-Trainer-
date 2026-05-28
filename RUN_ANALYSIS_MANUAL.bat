@@ -1,19 +1,18 @@
 @echo off
 setlocal
 cd /d "%~dp0"
-echo ============================================================
-echo Clean reinstall isolated external SAM2 runtime
-echo ============================================================
-echo This deletes runtime_sam2 and rebuilds it.
-echo.
-if exist "%~dp0runtime_sam2" (
-  echo Removing old runtime_sam2...
-  rmdir /s /q "%~dp0runtime_sam2"
+set "PY=%~dp0runtime\python\python.exe"
+if not exist "%PY%" (
+  echo Runtime missing. Run INSTALL_EXTERNAL_RUNTIME.bat first.
+  pause
+  exit /b 1
 )
-set PYEXE=
-if exist "%LOCALAPPDATA%\Programs\Python\Python312\python.exe" set PYEXE=%LOCALAPPDATA%\Programs\Python\Python312\python.exe
-if "%PYEXE%"=="" set PYEXE=python
-"%PYEXE%" "%~dp0scripts\install_external_sam2_runtime.py" --root "%~dp0runtime_sam2" --model base_plus --clean
-echo.
-echo Finished. Press any key.
-pause >nul
+if "%~1"=="" (
+  echo Drag a GeoTIFF onto this BAT, or call it with input path as first argument.
+  pause
+  exit /b 1
+)
+set "IN=%~1"
+set "OUT=%~dpn1_mustatil_detection.gpkg"
+"%PY%" "%~dp0scripts\mustatil_external_analyzer.py" --input "%IN%" --output "%OUT%" --model "%~dp0models\bestf260.onnx"
+pause

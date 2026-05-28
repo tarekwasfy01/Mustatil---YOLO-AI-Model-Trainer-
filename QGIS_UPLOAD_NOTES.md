@@ -1,12 +1,20 @@
-# QGIS Security Hardening 7.6.3
+# QGIS Plugin Repository Upload Notes
 
-Additional hardening for QGIS plugin review:
+This ZIP was rebuilt for QGIS plugin repository upload checks.
 
-- Downloads are restricted to HTTPS only.
-- Download hosts are explicitly allowlisted.
-- Downloads use streamed requests with timeouts and atomic `.part` files.
-- ZIP extraction now validates every archive member to block path traversal / zip-slip writes.
-- SAM2 checkpoint loading now requires PyTorch `weights_only=True`; insecure fallback loading was removed.
-- SAM2 checkpoints must use `.pt` or `.pth` and must be larger than 1 MB.
-- Runtime installation is launched through the current Python interpreter instead of `cmd.exe /c`.
-- Plugin structure, `LICENSE`, metadata and cache cleanup were rechecked.
+## Confirmed in this package
+
+- One top-level folder: `MustatilQGIS/`
+- `metadata.txt` exists in the top-level plugin folder
+- `__init__.py` exists in the top-level plugin folder
+- `LICENSE` exists in the top-level plugin folder
+- No `__pycache__`, `.pyc`, `.pyo`, `.pyd`, `.dll`, `.so` or `.dylib` files are included
+- English description is present in `metadata.txt`
+- Public GitHub links are set for homepage, repository and issue tracker
+- ZIP size is below the 25 MB upload limit
+
+## Still required before pressing upload
+
+- Install this exact ZIP in QGIS and test that the plugin starts.
+- Upload the same source code to the public GitHub repository listed in `metadata.txt`.
+- Do not upload cache folders, compiled files or local runtime folders to the repository.

@@ -1,14 +1,8 @@
-@echo off
-setlocal
-cd /d "%~dp0"
-echo ============================================================
-echo Install isolated external SAM2 runtime
-echo ============================================================
-set PYEXE=
-if exist "%LOCALAPPDATA%\Programs\Python\Python312\python.exe" set PYEXE=%LOCALAPPDATA%\Programs\Python\Python312\python.exe
-if "%PYEXE%"=="" set PYEXE=python
-echo If installation was previously broken, delete runtime_sam2 folder before running this.
-"%PYEXE%" "%~dp0scripts\install_external_sam2_runtime.py" --root "%~dp0runtime_sam2" --model base_plus
-echo.
-echo Finished. Press any key.
-pause >nul
+Copyright (c) 2026 Tarek Wasfy
+
+All rights reserved.
+
+This QGIS plugin package is provided by the copyright holder for installation and use in QGIS workflows.
+Redistribution, modification, publication, sublicensing or commercial reuse of the source code or package requires prior permission from the copyright holder unless a separate written license grants additional rights.
+
+The package may include references to third-party tools, models or libraries. Those components remain subject to their own respective licenses and terms.

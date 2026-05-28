@@ -1,8 +1,15 @@
-Copyright (c) 2026 Tarek Wasfy
+Integrated models and sources
 
-All rights reserved.
+1. bestf260.onnx
+   User supplied Mustatile model.
 
-This QGIS plugin package is provided by the copyright holder for installation and use in QGIS workflows.
-Redistribution, modification, publication, sublicensing or commercial reuse of the source code or package requires prior permission from the copyright holder unless a separate written license grants additional rights.
+2. treedetect.pt
+   Source:
+   https://zenodo.org/records/14512739
 
-The package may include references to third-party tools, models or libraries. Those components remain subject to their own respective licenses and terms.
+Please cite the original Zenodo source when using the tree detection model.
+
+TreeDetect model replaced:
+- File: treedetect.pt
+- Replaced with uploaded model: best (8).pt
+- Size: 92727744 bytes

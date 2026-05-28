@@ -1,9 +1,12 @@
-# QGIS security fixes for 7.6.2
+# QGIS Security Hardening 7.6.3
 
-This package addresses the reported QGIS/Bandit audit findings:
+Additional hardening for QGIS plugin review:
 
-- `external_sam2_segmenter.py`: checkpoint loading now uses `torch.load(..., weights_only=True)` where supported, with a compatibility fallback for older PyTorch builds.
-- `install_external_sam2_runtime.py`: runtime downloads validate URL schemes and reject non-http/non-https URLs before calling `urlretrieve`.
-- `mustatil_sam2_runtime_setup.py`: runtime downloads validate URL schemes and reject non-http/non-https URLs before calling `urlretrieve`.
-
-The package still contains the required top-level `LICENSE`, `metadata.txt`, and `__init__.py` files and excludes compiled Python cache files.
+- Downloads are restricted to HTTPS only.
+- Download hosts are explicitly allowlisted.
+- Downloads use streamed requests with timeouts and atomic `.part` files.
+- ZIP extraction now validates every archive member to block path traversal / zip-slip writes.
+- SAM2 checkpoint loading now requires PyTorch `weights_only=True`; insecure fallback loading was removed.
+- SAM2 checkpoints must use `.pt` or `.pth` and must be larger than 1 MB.
+- Runtime installation is launched through the current Python interpreter instead of `cmd.exe /c`.
+- Plugin structure, `LICENSE`, metadata and cache cleanup were rechecked.

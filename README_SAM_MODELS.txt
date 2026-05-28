@@ -1,300 +1,391 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""
-Mustatil QGIS SAM2 runner using the working Ultralytics SAM path.
-
-This intentionally does NOT use:
-- official facebookresearch/sam2 source
-- hydra
-- omegaconf
-- sam2.build_sam / build_sam2
-
-It uses the same working approach as the standalone GUI:
-    from ultralytics import SAM
-    SAM("sam2_b.pt").predict(image_array, bboxes=[...])
-
-Outputs:
-- image.with_suffix(".sam2.json") next to every segmented image
-- sam2_manifest.json in the requested output folder
-- optional mask PNG files in output/<image_stem>/
-"""
 from __future__ import annotations
 
 import argparse
-import json
-import os
+import subprocess
 import sys
-import traceback
-import zipfile
 from pathlib import Path
+from urllib.parse import urlparse
+import requests
+import zipfile
+import shutil
 
-os.environ.setdefault("PYTHONUTF8", "1")
-os.environ.setdefault("PYTHONIOENCODING", "utf-8")
-os.environ.setdefault("KMP_DUPLICATE_LIB_OK", "TRUE")
-os.environ.setdefault("MPLBACKEND", "Agg")
+SAM2_ZIP_URL = "https://github.com/facebookresearch/sam2/archive/refs/heads/main.zip"
 
-IMG_EXT = {".jpg", ".jpeg", ".png", ".tif", ".tiff", ".bmp", ".webp"}
+CHECKPOINTS = {
+    "tiny": "https://dl.fbaipublicfiles.com/segment_anything_2/072824/sam2_hiera_tiny.pt",
+    "small": "https://dl.fbaipublicfiles.com/segment_anything_2/072824/sam2_hiera_small.pt",
+    "base_plus": "https://dl.fbaipublicfiles.com/segment_anything_2/072824/sam2_hiera_base_plus.pt",
+    "large": "https://dl.fbaipublicfiles.com/segment_anything_2/072824/sam2_hiera_large.pt",
+}
 
-def list_images(path: str):
-    p = Path(path)
-    if p.is_file():
-        return [p]
-    return [x for x in sorted(p.rglob("*")) if x.suffix.lower() in IMG_EXT]
+CFG = {
+    "tiny": "sam2_hiera_t.yaml",
+    "small": "sam2_hiera_s.yaml",
+    "base_plus": "sam2_hiera_b+.yaml",
+    "large": "sam2_hiera_l.yaml",
+}
 
-def resolve_sam_model_file(model_text: str, runtime_root: Path, log=print) -> str:
-    """
-    Resolve and validate a SAM/SAM2 .pt file.
+OMEGACONF_SHIM = '''
+import copy
+import ast
+import yaml
 
-    Matches the working standalone GUI behavior: local weights are preferred,
-    but names such as sam2_b.pt may be passed to Ultralytics for auto-download.
-    """
-    name = (model_text or "sam2_b.pt").strip().strip('"')
-    p = Path(name)
-
-    search = []
-    if p.is_absolute():
-        search.append(p)
-    else:
-        base = Path(__file__).resolve().parents[1]
-        search += [
-            runtime_root / "weights" / p.name,
-            runtime_root / p.name,
-            base / "weights" / p.name,
-            base / "models" / p.name,
-            base / p.name,
-            Path.cwd() / p.name,
-            p,
-        ]
-
-    chosen = None
-    for c in search:
+class DictConfig(dict):
+    def __getattr__(self, name):
         try:
-            if c.exists():
-                chosen = c.resolve()
-                break
-        except Exception:
-            pass
+            return self[name]
+        except KeyError as exc:
+            raise AttributeError(name) from exc
+    def __setattr__(self, name, value):
+        self[name] = value
 
-    if chosen is None:
-        log(f"SAM model not found locally: {name}. Ultralytics may auto-download it.")
-        log("Recommended: place sam2_b.pt in plugin weights/ or models/ folder.")
-        return name
+def _wrap(x):
+    if isinstance(x, dict):
+        return DictConfig({k: _wrap(v) for k, v in x.items()})
+    if isinstance(x, list):
+        return [_wrap(v) for v in x]
+    return x
 
-    try:
-        size = chosen.stat().st_size
-    except Exception:
-        size = 0
+def _to_plain(x):
+    if isinstance(x, dict):
+        return {k: _to_plain(v) for k, v in x.items()}
+    if isinstance(x, list):
+        return [_to_plain(v) for v in x]
+    return x
 
-    if size < 1_000_000:
-        bad = chosen.with_suffix(chosen.suffix + ".broken")
+class OmegaConf:
+    @staticmethod
+    def load(path):
+        with open(path, "r", encoding="utf-8") as f:
+            data = yaml.safe_load(f) or {}
+        return _wrap(data)
+
+    @staticmethod
+    def create(obj):
+        return _wrap(copy.deepcopy(obj))
+
+    @staticmethod
+    def to_container(obj, resolve=True):
+        return _to_plain(obj)
+
+    @staticmethod
+    def resolve(obj):
+        return obj
+
+    @staticmethod
+    def merge(*configs):
+        def merge_two(a, b):
+            a = _to_plain(a)
+            b = _to_plain(b)
+            if isinstance(a, dict) and isinstance(b, dict):
+                out = dict(a)
+                for k, v in b.items():
+                    out[k] = merge_two(out.get(k), v) if k in out else v
+                return out
+            return b
+        out = {}
+        for cfg in configs:
+            out = merge_two(out, cfg)
+        return _wrap(out)
+
+    @staticmethod
+    def set_struct(obj, flag):
+        return None
+'''
+
+HYDRA_INIT_SHIM = '''
+from pathlib import Path
+import ast
+from omegaconf import OmegaConf, DictConfig
+
+_CONFIG_BASE = None
+
+def initialize_config_module(*args, **kwargs):
+    return None
+
+def initialize_config_dir(config_dir=None, *args, **kwargs):
+    global _CONFIG_BASE
+    _CONFIG_BASE = config_dir
+    return None
+
+def _parse_value(v):
+    if isinstance(v, str):
+        s = v.strip()
+        if s in ("true", "True"):
+            return True
+        if s in ("false", "False"):
+            return False
+        if s in ("null", "None", "~"):
+            return None
         try:
-            chosen.replace(bad)
-            moved = f" Moved to: {bad}"
+            return ast.literal_eval(s)
         except Exception:
-            moved = ""
-        raise RuntimeError(
-            f"SAM model file is too small/corrupt: {chosen} ({size} bytes).{moved}\n"
-            "Put a complete sam2_b.pt/sam2_t.pt into weights/ or choose it manually."
-        )
+            return s
+    return v
 
-    if zipfile.is_zipfile(chosen):
-        with zipfile.ZipFile(chosen, "r") as zf:
-            bad_member = zf.testzip()
-        if bad_member is not None:
-            bad = chosen.with_suffix(chosen.suffix + ".broken")
-            try:
-                chosen.replace(bad)
-                moved = f" Moved to: {bad}"
-            except Exception:
-                moved = ""
-            raise RuntimeError(
-                f"SAM model archive is corrupt at member {bad_member}: {chosen}.{moved}"
-            )
+def _set_nested(cfg, key, value):
+    if key.startswith("++"):
+        key = key[2:]
+    if key.startswith("+"):
+        key = key[1:]
+    parts = key.split(".")
+    cur = cfg
+    for p in parts[:-1]:
+        if p not in cur or cur[p] is None:
+            cur[p] = DictConfig()
+        cur = cur[p]
+    cur[parts[-1]] = _parse_value(value)
 
-    log(f"Using SAM model: {chosen} ({size/1024/1024:.1f} MB)")
-    return str(chosen)
+def compose(config_name=None, overrides=None, *args, **kwargs):
+    path = Path(config_name)
+    if not path.exists() and _CONFIG_BASE:
+        path = Path(_CONFIG_BASE) / config_name
+    cfg = OmegaConf.load(path)
+    for ov in overrides or []:
+        if "=" in ov:
+            k, v = ov.split("=", 1)
+            _set_nested(cfg, k, v)
+    return cfg
+'''
 
-def load_sam_model(model_text: str, runtime_root: Path):
-    from ultralytics import SAM
-    model_path = resolve_sam_model_file(model_text, runtime_root, log=print)
-    try:
-        return SAM(model_path)
-    except Exception as exc:
-        msg = str(exc).lower()
-        if "zip" in msg or "pickle" in msg or "failed reading zip archive" in msg:
-            try:
-                p = Path(model_path)
-                if p.exists():
-                    bad = p.with_suffix(p.suffix + ".broken")
-                    p.replace(bad)
-                    print(f"Corrupt SAM model moved to: {bad}", flush=True)
-            except Exception:
-                pass
-            raise RuntimeError(
-                "SAM model load failed because the .pt file is incomplete or corrupt. "
-                "Replace it with a complete sam2_b.pt/sam2_t.pt."
-            ) from exc
-        raise
+HYDRA_UTILS_SHIM = '''
+import importlib
+from omegaconf import OmegaConf
 
-def yolo_boxes_for_image(img: Path, labels_dir: str | None, W: int, H: int):
-    boxes = []
-    candidates = [
-        img.with_suffix(".txt"),
-        img.parent.parent / "labels" / (img.stem + ".txt"),
-    ]
-    if labels_dir:
-        candidates.append(Path(labels_dir) / (img.stem + ".txt"))
+def _plain(x):
+    return OmegaConf.to_container(x, resolve=True)
 
-    for lab in candidates:
-        try:
-            if not lab.exists():
-                continue
-            for line in lab.read_text(encoding="utf-8", errors="ignore").splitlines():
-                parts = line.split()
-                if len(parts) >= 5:
-                    cx, cy, bw, bh = map(float, parts[1:5])
-                    x1 = (cx - bw / 2.0) * W
-                    y1 = (cy - bh / 2.0) * H
-                    x2 = (cx + bw / 2.0) * W
-                    y2 = (cy + bh / 2.0) * H
-                    boxes.append([max(0, x1), max(0, y1), min(W - 1, x2), min(H - 1, y2)])
-            if boxes:
-                return boxes
-        except Exception:
-            pass
+def _locate(target):
+    module_name, name = target.rsplit(".", 1)
+    module = importlib.import_module(module_name)
+    return getattr(module, name)
 
-    return [[0, 0, W - 1, H - 1]]
+def instantiate(cfg, *args, **kwargs):
+    cfg = _plain(cfg)
+    if isinstance(cfg, list):
+        return [instantiate(x) for x in cfg]
+    if not isinstance(cfg, dict):
+        return cfg
 
-def segment_one(img_path: Path, sam, out_root: Path, labels_dir: str | None, padding: int, max_crop: int, save_masks: bool):
-    from PIL import Image
-    import numpy as np
-    import cv2
+    if "_target_" not in cfg:
+        return {k: instantiate(v) for k, v in cfg.items()}
 
-    im = Image.open(img_path).convert("RGB")
-    W, H = im.size
-    boxes = yolo_boxes_for_image(img_path, labels_dir, W, H)
-
-    print(f"ULTRALYTICS_SAM_START:{img_path.name}:prompts={len(boxes)} size={W}x{H}", flush=True)
-
-    out_dir = out_root / img_path.stem
-    out_dir.mkdir(parents=True, exist_ok=True)
-
-    polys = []
-    for i, bb in enumerate(boxes, start=1):
-        x1, y1, x2, y2 = map(float, bb)
-        left = max(0, int(x1 - padding))
-        top = max(0, int(y1 - padding))
-        right = min(W, int(x2 + padding))
-        bottom = min(H, int(y2 + padding))
-
-        if right <= left or bottom <= top:
+    target = cfg.get("_target_")
+    cls = _locate(target)
+    params = {}
+    for k, v in cfg.items():
+        if k.startswith("_"):
             continue
+        params[k] = instantiate(v)
 
-        crop = im.crop((left, top, right, bottom))
-        rb = [x1 - left, y1 - top, x2 - left, y2 - top]
+    params.update(kwargs)
+    return cls(**params)
+'''
 
-        scale = 1.0
-        max_side = max(crop.size)
-        if max_side > max_crop:
-            scale = max_crop / float(max_side)
-            crop = crop.resize((max(1, int(crop.width * scale)), max(1, int(crop.height * scale))))
-            rb = [v * scale for v in rb]
 
-        try:
-            res = sam.predict(np.asarray(crop), bboxes=[rb], verbose=False)
-            if res and res[0].masks is not None and getattr(res[0].masks, "xy", None):
-                inv = 1.0 / scale
-                xy_list = res[0].masks.xy
-                for mask_idx, xy in enumerate(xy_list):
-                    poly = [(float(x) * inv + left, float(y) * inv + top) for x, y in xy]
-                    item = {
-                        "image": img_path.name,
-                        "bbox": [x1, y1, x2, y2],
-                        "polygon": poly,
-                        "prompt_index": i,
-                        "padding": padding,
-                        "max_crop": max_crop,
-                    }
-                    polys.append(item)
+HYDRA_CORE_INIT_SHIM = """
+""".strip() + "\n"
 
-                    if save_masks:
-                        mask_img = None
-                        try:
-                            data = res[0].masks.data[mask_idx].cpu().numpy()
-                            mask_img = (data.astype("uint8") * 255)
-                        except Exception:
-                            mask_img = None
-                        if mask_img is not None:
-                            cv2.imwrite(str(out_dir / f"mask_{i:04d}_{mask_idx:02d}.png"), mask_img)
-        except Exception as exc:
-            print(f"ULTRALYTICS_SAM_PROMPT_ERROR:{img_path.name}:{i}:{exc}", flush=True)
+HYDRA_GLOBAL_HYDRA_SHIM = """
+class GlobalHydra:
+    _instance = None
 
-        if i % 5 == 0 or i == len(boxes):
-            print(f"ULTRALYTICS_SAM_PROGRESS:{img_path.name}:{i}/{len(boxes)} masks={len(polys)}", flush=True)
+    def __init__(self):
+        self._initialized = False
 
-    sidecar = img_path.with_suffix(".sam2.json")
-    sidecar.write_text(json.dumps({"polygons": polys, "count": len(polys), "image": str(img_path)}, indent=2), encoding="utf-8")
-    print(f"ULTRALYTICS_SAM_SAVED:{sidecar}", flush=True)
-    return polys
+    @classmethod
+    def instance(cls):
+        if cls._instance is None:
+            cls._instance = GlobalHydra()
+        return cls._instance
+
+    def is_initialized(self):
+        return self._initialized
+
+    def clear(self):
+        self._initialized = False
+
+    def initialize(self, *args, **kwargs):
+        self._initialized = True
+        return None
+""".strip() + "\n"
+
+HYDRA_CONFIG_STORE_SHIM = """
+class ConfigStore:
+    _instance = None
+
+    def __init__(self):
+        self.items = []
+
+    @classmethod
+    def instance(cls):
+        if cls._instance is None:
+            cls._instance = ConfigStore()
+        return cls._instance
+
+    def store(self, *args, **kwargs):
+        self.items.append((args, kwargs))
+        return None
+""".strip() + "\n"
+
+HYDRA_UTILS_PKG_SHIM = """
+from . import instantiate
+""".strip() + "\n"
+
+IOPATH_SHIM = '''
+import os
+
+class _PathManager:
+    def open(self, path, mode="r", *args, **kwargs):
+        return open(path, mode, *args, **kwargs)
+    def exists(self, path):
+        return os.path.exists(path)
+    def isfile(self, path):
+        return os.path.isfile(path)
+    def isdir(self, path):
+        return os.path.isdir(path)
+    def mkdirs(self, path):
+        os.makedirs(path, exist_ok=True)
+    def get_local_path(self, path, *args, **kwargs):
+        return str(path)
+    def copy(self, src_path, dst_path, overwrite=False, **kwargs):
+        import shutil
+        if overwrite or not os.path.exists(dst_path):
+            shutil.copy2(src_path, dst_path)
+        return True
+
+g_pathmgr = _PathManager()
+PathManager = _PathManager
+'''
+
+def run(cmd, required=False):
+    print("$ " + " ".join(map(str, cmd)), flush=True)
+    try:
+        subprocess.check_call(list(map(str, cmd)))
+        return True
+    except Exception as exc:
+        print(f"Command failed: {exc}", flush=True)
+        if required:
+            raise
+        return False
+
+def pip_install(packages, required=False):
+    return run([sys.executable, "-m", "pip", "install", "--upgrade", "--prefer-binary"] + list(packages), required=required)
+
+def _validate_download_url(url: str) -> None:
+    parsed = urlparse(url)
+    if parsed.scheme != "https":
+        raise ValueError(f"Refusing non-HTTPS download URL scheme: {parsed.scheme!r}")
+    allowed_hosts = {
+        "www.python.org",
+        "bootstrap.pypa.io",
+        "github.com",
+        "codeload.github.com",
+        "dl.fbaipublicfiles.com",
+        "files.pythonhosted.org",
+        "pypi.org",
+    }
+    host = (parsed.hostname or "").lower()
+    if not host or host not in allowed_hosts:
+        raise ValueError(f"Refusing download from unapproved host: {host!r}")
+
+def download(url: str, out: Path):
+    _validate_download_url(url)
+    out.parent.mkdir(parents=True, exist_ok=True)
+    if out.exists() and out.stat().st_size > 100:
+        print(f"Already present: {out}", flush=True)
+        return
+    print(f"Downloading: {url}", flush=True)
+    tmp = out.with_suffix(out.suffix + ".part")
+    with requests.get(url, stream=True, timeout=(10, 60), allow_redirects=True) as response:
+        response.raise_for_status()
+        _validate_download_url(response.url)
+        with open(tmp, "wb") as fh:
+            for chunk in response.iter_content(chunk_size=1024 * 1024):
+                if chunk:
+                    fh.write(chunk)
+    tmp.replace(out)
+
+def write_shims(dest: Path):
+    shim_root = dest / "sam2_shims"
+    hydra_pkg = shim_root / "hydra"
+    hydra_core_pkg = shim_root / "hydra" / "core"
+    omega_pkg = shim_root / "omegaconf"
+    iopath_pkg = shim_root / "iopath" / "common"
+    hydra_pkg.mkdir(parents=True, exist_ok=True)
+    hydra_core_pkg.mkdir(parents=True, exist_ok=True)
+    omega_pkg.mkdir(parents=True, exist_ok=True)
+    iopath_pkg.mkdir(parents=True, exist_ok=True)
+
+    (omega_pkg / "__init__.py").write_text(OMEGACONF_SHIM.strip() + "\n", encoding="utf-8")
+    (hydra_pkg / "__init__.py").write_text(HYDRA_INIT_SHIM.strip() + "\n", encoding="utf-8")
+    (hydra_pkg / "utils.py").write_text(HYDRA_UTILS_SHIM.strip() + "\n", encoding="utf-8")
+    (hydra_core_pkg / "__init__.py").write_text(HYDRA_CORE_INIT_SHIM, encoding="utf-8")
+    (hydra_core_pkg / "global_hydra.py").write_text(HYDRA_GLOBAL_HYDRA_SHIM, encoding="utf-8")
+    (hydra_core_pkg / "config_store.py").write_text(HYDRA_CONFIG_STORE_SHIM, encoding="utf-8")
+
+    (shim_root / "iopath" / "__init__.py").write_text("", encoding="utf-8")
+    (iopath_pkg / "__init__.py").write_text("", encoding="utf-8")
+    (iopath_pkg / "file_io.py").write_text(IOPATH_SHIM.strip() + "\n", encoding="utf-8")
+
+    (dest / "sam2_shim_path.txt").write_text(str(shim_root), encoding="utf-8")
+    print(f"SAM2 local shims ready: {shim_root}", flush=True)
+
+def extract_sam2_source(dest: Path) -> Path:
+    zip_path = dest / "sam2_main.zip"
+    download(SAM2_ZIP_URL, zip_path)
+
+    src_root = dest / "sam2_source"
+    if src_root.exists():
+        shutil.rmtree(src_root, ignore_errors=True)
+    src_root.mkdir(parents=True, exist_ok=True)
+
+    print(f"Extracting SAM2 source: {zip_path}", flush=True)
+    safe_extract_zip(zip_path, src_root)
+
+    candidates = [p for p in src_root.iterdir() if p.is_dir() and (p / "sam2").exists()]
+    if not candidates:
+        raise RuntimeError(f"SAM2 extraction failed. No extracted folder contains sam2/: {src_root}")
+
+    source_dir = candidates[0]
+    (dest / "sam2_source_path.txt").write_text(str(source_dir), encoding="utf-8")
+    print(f"SAM2 source path: {source_dir}", flush=True)
+    return source_dir
+
+def setup(dest: Path, model: str):
+    dest.mkdir(parents=True, exist_ok=True)
+
+    print("Preparing SAM2 local shims and runtime dependencies...", flush=True)
+    write_shims(dest)
+    pip_install(["tqdm", "opencv-python", "pillow", "numpy", "pyyaml"], required=False)
+
+    source_dir = extract_sam2_source(dest)
+
+    ckpt = dest / Path(CHECKPOINTS[model]).name
+    download(CHECKPOINTS[model], ckpt)
+
+    cfg_name = CFG[model]
+    (dest / "sam2_config.txt").write_text(cfg_name, encoding="utf-8")
+    matches = list(source_dir.rglob(cfg_name))
+    if matches:
+        (dest / "sam2_config_path.txt").write_text(str(matches[0]), encoding="utf-8")
+        print(f"SAM2 config path: {matches[0]}", flush=True)
+    else:
+        print(f"SAM2 config file name stored: {cfg_name}", flush=True)
+
+    (dest / "sam2_checkpoint_path.txt").write_text(str(ckpt), encoding="utf-8")
+    print("SAM2_RUNTIME_READY=1", flush=True)
+    print(f"checkpoint={ckpt}", flush=True)
+    print(f"config={cfg_name}", flush=True)
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--images", required=True)
-    ap.add_argument("--output", required=True)
-    ap.add_argument("--mode", choices=["one", "all"], default="one")
-    ap.add_argument("--checkpoint", default="")
-    ap.add_argument("--model-cfg", default="")  # ignored, kept for QGIS compatibility
-    ap.add_argument("--model", default="")
-    ap.add_argument("--labels-dir", default="")
-    ap.add_argument("--padding", type=int, default=96)
-    ap.add_argument("--max-crop", type=int, default=1024)
-    ap.add_argument("--save-masks", action="store_true")
+    ap.add_argument("--dest", required=True)
+    ap.add_argument("--model", choices=list(CHECKPOINTS), default="tiny")
     args = ap.parse_args()
-
-    print("ULTRALYTICS_SAM_RUNNER=1", flush=True)
-    print("NO_HYDRA=1", flush=True)
-
-    out = Path(args.output)
-    out.mkdir(parents=True, exist_ok=True)
-
-    runtime_root = Path(__file__).resolve().parents[1]
-    model_text = args.model or args.checkpoint or "sam2_b.pt"
-
-    manifest = {
-        "runner": "ultralytics_sam",
-        "hydra": False,
-        "mode": args.mode,
-        "model": model_text,
-        "images": [],
-        "outputs": [],
-        "real_sam2": False,
-    }
-
-    try:
-        sam = load_sam_model(model_text, runtime_root)
-        images = list_images(args.images)
-        if args.mode == "one" and images:
-            images = images[:1]
-
-        all_polys = []
-        for idx, img in enumerate(images, start=1):
-            print(f"ULTRALYTICS_SAM_IMAGE:{idx}/{len(images)} {img.name}", flush=True)
-            polys = segment_one(img, sam, out, args.labels_dir or None, args.padding, args.max_crop, args.save_masks)
-            all_polys.extend(polys)
-            manifest["outputs"].append({"image": str(img), "count": len(polys), "sidecar": str(img.with_suffix(".sam2.json"))})
-
-        manifest["images"] = [str(p) for p in images]
-        manifest["count"] = len(all_polys)
-        manifest["real_sam2"] = True
-        print(f"ULTRALYTICS_SAM_FINISHED:masks={len(all_polys)}", flush=True)
-    except Exception as exc:
-        manifest["error"] = str(exc)
-        manifest["traceback"] = traceback.format_exc()
-        print("ULTRALYTICS_SAM_FAILED", flush=True)
-        traceback.print_exc()
-
-    (out / "sam2_manifest.json").write_text(json.dumps(manifest, indent=2), encoding="utf-8")
-    print(f"Output: {out}", flush=True)
+    setup(Path(args.dest), args.model)
 
 if __name__ == "__main__":
     main()
